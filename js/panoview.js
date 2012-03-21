@@ -120,6 +120,44 @@ Pano.projection = {
             projected.x = projX;
             projected.y = projY;
         }
+    },
+    equirectToLinear : function( viewer ) {
+        var canvasWidth = viewer.canvasContext.canvas.width;
+        var canvasHeight = viewer.canvasContext.canvas.height;
+        var R = 2400/Math.PI;
+        return function(yaw, pitch, projected) {
+            var x = R*Math.tan(yaw);
+            var y = R*Math.tan(pitch)/Math.cos(pitch) ;
+            projected.x = x;
+            projected.y = y;
+        }
+    },
+    linearToEquirect : function(viewer) {
+        var canvasWidth = viewer.canvasContext.canvas.width;
+        var canvasHeight = viewer.canvasContext.canvas.height;
+        
+        var phi0 = viewer.toRadians(viewer.pov.pitch);
+        var lam0 = viewer.toRadians(viewer.pov.yaw);
+        var invProj = Pano.projection.equirectToLinear(viewer);
+        var ul = {};
+        invProj(-Math.PI/4, -Math.PI/4, ul);
+        var br = {};
+        invProj(Math.PI/4, Math.PI/4, br);
+        var R = 2400/Math.PI;
+        var rangeX = (br.x - ul.x);
+        var rangeY = (br.y - ul.y);
+        return function(x,y, projected){
+            //center coordinate system to middle of canvas
+            var x0 = x*rangeX/canvasWidth + ul.x;
+            var y0 = y*rangeY/canvasHeight + ul.y;
+            var ro = Math.sqrt(x0*x0 + y0*y0);
+            var c = Math.atan2(ro,R);
+            var phi = (ro === 0 ? 0: Math.asin(y0*Math.sin(c)/ro));
+            var lam = Math.atan2(x0*Math.sin(c) , ro*Math.cos(c));
+            projected.x = (180 + viewer.toDegrees(lam + lam0)) / viewer.sourceInfo.degPerSrcPixelX;
+            projected.y = (90  + viewer.toDegrees(phi)) / viewer.sourceInfo.degPerSrcPixelY;
+            
+        }
     }
 };
 
@@ -179,7 +217,8 @@ var PanoViewer = function (canvas) {
         drawImage : function () {
 
             //the target to source projection
-            var proj = Pano.projection.canvasToEquirect(self);
+            //var proj = Pano.projection.canvasToEquirect(self);
+            var proj = Pano.projection.linearToEquirect(self);
             var imgData = self.canvasContext.createImageData(self.canvasContext.canvas.width, self.canvasContext.canvas.height);
             var imgSrc = self.imageDataContext.getImageData(0,0,self.imageDataContext.canvas.width, self.imageDataContext.canvas.height);
             var width = imgData.width;
