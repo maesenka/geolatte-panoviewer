@@ -122,12 +122,11 @@ Pano.projection = {
         }
     },
     equirectToLinear : function( viewer ) {
-        var canvasWidth = viewer.canvasContext.canvas.width;
-        var canvasHeight = viewer.canvasContext.canvas.height;
-        var R = 2400/Math.PI;
+        var R = viewer.sourceInfo.width/(2*Math.PI);
+        var lam0 = viewer.toRadians(viewer.pov.yaw);
         return function(yaw, pitch, projected) {
             var x = R*Math.tan(yaw);
-            var y = R*Math.tan(pitch)/Math.cos(pitch) ;
+            var y = R*Math.tan(pitch)/Math.cos(yaw - lam0) ;
             projected.x = x;
             projected.y = y;
         }
@@ -140,16 +139,18 @@ Pano.projection = {
         var lam0 = viewer.toRadians(viewer.pov.yaw);
         var invProj = Pano.projection.equirectToLinear(viewer);
         var ul = {};
-        invProj(-Math.PI/4, -Math.PI/4, ul);
+        //invProj(-Math.PI/4, -Math.PI/4, ul);
+        invProj(viewer.toRadians(viewer.pov.yaw-viewer.hFov()/2), viewer.toRadians(viewer.pov.pitch - viewer.vFov()/2),ul);
         var br = {};
-        invProj(Math.PI/4, Math.PI/4, br);
-        var R = 2400/Math.PI;
+        //invProj(Math.PI/4, Math.PI/4, br);
+        invProj(viewer.toRadians(viewer.pov.yaw + viewer.hFov()/2), viewer.toRadians(viewer.pov.pitch + viewer.vFov()/2),br);
+        var R = viewer.sourceInfo.width/(2*Math.PI); //4800 is width of complete image.
         var rangeX = (br.x - ul.x);
         var rangeY = (br.y - ul.y);
         return function(x,y, projected){
             //center coordinate system to middle of canvas
             var x0 = x*rangeX/canvasWidth + ul.x;
-            var y0 = y*rangeY/canvasHeight + ul.y;
+            var y0 = y*rangeY/canvasHeight + ul.y;            
             var ro = Math.sqrt(x0*x0 + y0*y0);
             var c = Math.atan2(ro,R);
             var phi = (ro === 0 ? 0: Math.asin(y0*Math.sin(c)/ro));
@@ -172,14 +173,16 @@ var PanoViewer = function (canvas) {
         pov : {yaw: 0.0,        //view angle in horizontal plane
                  pitch: 0.0,    //view angle in vertical plane
                  zoom: 1.0},    //zoom factor = # canvasPixel / sourcePixel
-        interpolator : Pano.interp.bilinear,    // the image interpolation function (a member of PanoInterp)       
+        interpolator : Pano.interp.nearestNeighbor,    // the image interpolation function (a member of PanoInterp)       
         sourceInfo: {},
         currentTarget: null,	  //the current target is the image pixel that is "targeted" by a cursor.
         hFov : function () {
-            return self.canvasElement.width * self.currentDegPerCanvasPixelX();
+           // return self.canvasElement.width * self.currentDegPerCanvasPixelX();
+           return self.toDegrees(2*Math.atan2(self.canvasElement.width*self.pov.zoom , (4800/Math.PI))); 
         },
         vFov : function () {
-            return self.canvasElement.height * self.currentDegPerCanvasPixelY();
+            //return self.canvasElement.height * self.currentDegPerCanvasPixelY();
+            return self.toDegrees(2*Math.atan2(self.canvasElement.height*self.pov.zoom  , (4800/Math.PI)));
         },
         imageDataContext : null,       //image data buffer (holds the complete panoramic image
         loadImageSrc : function (url, recordingLocation, pov) {
@@ -217,8 +220,8 @@ var PanoViewer = function (canvas) {
         drawImage : function () {
 
             //the target to source projection
-            //var proj = Pano.projection.canvasToEquirect(self);
-            var proj = Pano.projection.linearToEquirect(self);
+           //var proj = Pano.projection.canvasToEquirect(self);
+           var proj = Pano.projection.linearToEquirect(self);
             var imgData = self.canvasContext.createImageData(self.canvasContext.canvas.width, self.canvasContext.canvas.height);
             var imgSrc = self.imageDataContext.getImageData(0,0,self.imageDataContext.canvas.width, self.imageDataContext.canvas.height);
             var width = imgData.width;
@@ -274,7 +277,9 @@ var PanoViewer = function (canvas) {
                 var dyaw = dx*self.currentDegPerCanvasPixelX();
                 var dpitch = dy*self.currentDegPerCanvasPixelY();
                 self.pov.yaw = self.normalizeX(povStart.yaw - dyaw);
-                self.pov.pitch = self.clampY(povStart.pitch + dpitch);                
+                self.pov.pitch = self.clampY(povStart.pitch + dpitch);
+                //only do self.drawImage if we don't do pixel-by-pixel interpolation
+                //self.drawImage();                
             };
             //.. and the function to remove the mouse-move handler on mouseup or mouseout
             var removeListenersAndRedraw = function (ev) {
